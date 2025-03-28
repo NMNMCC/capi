@@ -5,7 +5,7 @@ import { Hono } from "hono";
 import { streamText } from "hono/streaming";
 import { spawn } from "node:child_process";
 import { randomUUID, UUID } from "node:crypto";
-import { authenticator } from "otplib";
+import * as OTPAuth from "otpauth";
 
 const ALLOWED_EXECUTABLES =
     process.env["ALLOWED_EXECUTABLES"]?.split(",") ?? [];
@@ -19,11 +19,12 @@ const server = new Hono()
     .get("/auth/:code?", async (ctx) => {
         const { code } = ctx.req.param();
         if (!SECRET || !code) {
-            const secret = authenticator.generateSecret();
+            const secret = new OTPAuth.Secret().base32;
             return ctx.text(secret);
         }
 
-        if (!authenticator.check(SECRET, code)) {
+        const totp = new OTPAuth.TOTP({ secret: SECRET });
+        if (!totp.validate({ token: code })) {
             return ctx.text("Invalid code", 403);
         }
 

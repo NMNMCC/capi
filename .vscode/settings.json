@@ -1,3 +1,11 @@
 {
-    "cSpell.words": ["capi", "debian", "intzaaa", "otplib", "qrcode"]
+    "cSpell.words": [
+        "capi",
+        "debian",
+        "intzaaa",
+        "otpauth",
+        "otplib",
+        "qrcode",
+        "totp"
+    ]
 }
