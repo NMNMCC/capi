@@ -6,6 +6,7 @@
         "otpauth",
         "otplib",
         "qrcode",
-        "totp"
+        "totp",
+        "tsup"
     ]
 }
