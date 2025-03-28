@@ -1,6 +1,6 @@
 {
     "name": "@intzaaa/capi",
-    "version": "0.0.8",
+    "version": "0.0.9",
     "exports": {
         "default": {
             "default": "./src/type.ts"
@@ -10,8 +10,8 @@
         "capi": "./dist/index.cjs"
     },
     "scripts": {
-        "dev": "node --import @swc-node/register/esm-register ./src/index.ts",
-        "build": "tsc ./src/index.ts --noEmit && tsup ./src/cli.ts --clean -d .tsup && ncc build ./.tsup/cli.cjs -s -o ./dist",
+        "dev": "cross-env NODE_ENV=development node --import @swc-node/register/esm-register ./src/cli.ts",
+        "build": "pnpm i && tsc ./src/index.ts --noEmit && tsup ./src/cli.ts --clean -d .tsup && ncc build ./.tsup/cli.cjs -s -o ./dist",
         "build-publish": "pnpm i && pnpm build && pnpm publish --access=public --registry https://registry.npmjs.com"
     },
     "files": [
@@ -28,11 +28,12 @@
         "@types/node": "^22.13.14",
         "@types/qrcode-terminal": "^0.12.2",
         "@vercel/ncc": "^0.38.3",
+        "fp-ts": "^2.16.9",
         "hono": "^4.7.5",
         "otpauth": "^9.3.6",
         "qrcode-terminal": "^0.12.0",
         "tsup": "^8.4.0",
-        "fp-ts": "^2.16.9"
+        "cross-env": "^7.0.3"
     },
     "dependencies": {}
 }

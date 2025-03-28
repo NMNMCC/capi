@@ -1,12 +1,13 @@
-import { pipe } from "fp-ts/lib/function";
 import { Hono } from "hono";
-import { streamText } from "hono/streaming";
+import { stream, streamText } from "hono/streaming";
 import { spawn } from "node:child_process";
 import { randomUUID, UUID } from "node:crypto";
 import { resolve } from "node:path";
 import * as OTPAuth from "otpauth";
-import { promises as fs } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
 
+const DEV = process.env["NODE_ENV"] === "development";
 const ALLOWED_EXECUTABLES =
     process.env["ALLOWED_EXECUTABLES"]?.split(",") ?? [];
 const ALLOWED_FILE_PATHS = process.env["ALLOWED_FILE_PATHS"]?.split(",") ?? [];
@@ -17,6 +18,7 @@ const TOKEN_EXPIRATION = Number(process.env["TOKEN_EXPIRATION"]) || 1_800_000;
 const tokens: Set<UUID> = new Set();
 
 const isValidToken = (token?: UUID): boolean => {
+    if (DEV) return true;
     if (!token) return false;
     return tokens.has(token);
 };
@@ -42,27 +44,42 @@ export const app = new Hono()
         setTimeout(() => tokens.delete(token), TOKEN_EXPIRATION);
         return ctx.text(token);
     })
-    .get("/file/:path", async (ctx) => {
+    .get("/file/*", async (ctx) => {
         const { token } = ctx.req.query();
         if (!isValidToken(token as UUID)) return ctx.text("Invalid token", 403);
 
-        const path = pipe(ctx.req.param("path"), decodeURIComponent, resolve);
-        if (!ALLOWED_FILE_PATHS.includes(path))
+        const path = resolve("/", ctx.req.url.split("/").slice(4).join("/"));
+
+        if (!DEV && !ALLOWED_FILE_PATHS.includes(path))
             return ctx.text("Not allowed", 403);
-
-        return;
+        return stream(
+            ctx,
+            (stream) =>
+                new Promise((resolve, reject) => {
+                    const file = createReadStream(path);
+                    file.on("data", stream.write.bind(stream));
+                    file.on("close", resolve);
+                    file.on("error", reject);
+                }),
+            async (err, stream) => {
+                await stream.write(err.message);
+                stream.abort();
+            }
+        );
     })
-    .post("/file/:path", async (ctx) => {
+    .post("/file/*", async (ctx) => {
         const { token } = ctx.req.query();
-        if (!isValidToken(token as UUID)) return ctx.text("Invalid token", 403);
+        if (!DEV && !isValidToken(token as UUID))
+            return ctx.text("Invalid token", 403);
 
-        const path = pipe(ctx.req.param("path"), decodeURIComponent, resolve);
-        if (!ALLOWED_FILE_PATHS.includes(path))
+        const path = resolve("/", ctx.req.url.split("/").slice(4).join("/"));
+
+        if (!DEV && !ALLOWED_FILE_PATHS.includes(path))
             return ctx.text("Not allowed", 403);
 
         const content = await ctx.req.text();
         try {
-            await fs.writeFile(path, content, "utf8");
+            await writeFile(path, content, "utf8");
             return ctx.status(200);
         } catch (err) {
             return ctx.status(500);
@@ -71,7 +88,7 @@ export const app = new Hono()
     .get("/exec/:exec/*", async (ctx) => {
         try {
             const { exec } = ctx.req.param();
-            if (!ALLOWED_EXECUTABLES.includes(exec))
+            if (!DEV && !ALLOWED_EXECUTABLES.includes(exec))
                 return ctx.text("Not allowed", 403);
 
             const args = ctx.req.url
@@ -79,7 +96,7 @@ export const app = new Hono()
                 .slice(4)
                 .map((arg) => decodeURIComponent(arg));
             const { stdout, stderr, token } = ctx.req.query();
-            if (!isValidToken(token as UUID))
+            if (!DEV && !isValidToken(token as UUID))
                 return ctx.text("Invalid token", 403);
 
             return streamText(
