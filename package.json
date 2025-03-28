@@ -1,6 +1,6 @@
 {
     "name": "@intzaaa/capi",
-    "version": "0.0.9",
+    "version": "0.0.10",
     "exports": {
         "default": {
             "default": "./src/type.ts"
