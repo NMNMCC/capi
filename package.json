@@ -1,12 +1,12 @@
 {
     "name": "@intzaaa/capi",
-    "version": "0.0.4",
+    "version": "0.0.5",
     "bin": {
         "capi": "./dist/index.cjs"
     },
     "scripts": {
         "dev": "node --import @swc-node/register/esm-register ./src/index.ts",
-        "build": "tsc ./src/index.ts && tsup ./src/index.ts -d .tsup && ncc build ./.tsup/index.cjs -s -o ./dist",
+        "build": "tsc ./src/index.ts --noEmit && tsup ./src/index.ts -d .tsup && ncc build ./.tsup/index.cjs -s -o ./dist",
         "build-publish": "pnpm i && pnpm build && pnpm publish --access=public --registry https://registry.npmjs.com"
     },
     "files": [
