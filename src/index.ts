@@ -22,6 +22,11 @@ const log = logger(LOGLEVEL, NAME);
 
 const tokens: Set<UUID> = new Set();
 
+const getToken = (headers: Headers): UUID | undefined => {
+    const authHeader = headers.get("Authorization");
+    return authHeader ? (authHeader as UUID) : undefined;
+};
+
 // 修改简化工具函数
 const checkToken = (
     token: UUID | undefined,
@@ -72,7 +77,7 @@ export const app = new Hono()
         return ctx.text(token);
     })
     .get("/file/*", async (ctx) => {
-        const { token } = ctx.req.query();
+        const token = getToken(ctx.req.raw.headers);
         if (!checkToken(token as UUID, DEV, tokens)) {
             log("ERROR", ["Invalid token", token]);
             return ctx.text("Invalid token", 403);
@@ -103,7 +108,7 @@ export const app = new Hono()
         );
     })
     .post("/file/*", async (ctx) => {
-        const { token } = ctx.req.query();
+        const token = getToken(ctx.req.raw.headers);
         if (!checkToken(token as UUID, DEV, tokens)) {
             log("ERROR", ["Invalid token", token]);
             return ctx.text("Invalid token", 403);
@@ -127,6 +132,12 @@ export const app = new Hono()
     })
     .get("/exec/:exec/*", async (ctx) => {
         try {
+            const token = getToken(ctx.req.raw.headers);
+            if (!checkToken(token as UUID, DEV, tokens)) {
+                log("ERROR", ["Invalid token", token]);
+                return ctx.text("Invalid token", 403);
+            }
+
             const { exec } = ctx.req.param();
 
             if (!checkExec(exec, DEV, ALLOWED_EXECUTABLES)) {
@@ -145,12 +156,6 @@ export const app = new Hono()
                           .split("/")
                           .map(decodeURIComponent)
                     : [];
-
-            const { token } = ctx.req.query();
-            if (!checkToken(token as UUID, DEV, tokens)) {
-                log("ERROR", ["Invalid token", token]);
-                return ctx.text("Invalid token", 403);
-            }
 
             return streamText(
                 ctx,
