@@ -136,10 +136,15 @@ export const app = new Hono()
 
             const { stdout, stderr } = ctx.req.query();
 
-            const args = ctx.req.url
-                .split("/")
-                .slice(4)
-                .map((arg) => decodeURIComponent(arg));
+            const url = ctx.req.url;
+            const execPathIndex = url.indexOf(`/exec/${exec}/`);
+            const args =
+                execPathIndex >= 0
+                    ? url
+                          .slice(execPathIndex + `/exec/${exec}/`.length)
+                          .split("/")
+                          .map(decodeURIComponent)
+                    : [];
 
             const { token } = ctx.req.query();
             if (!checkToken(token as UUID, DEV, tokens)) {
