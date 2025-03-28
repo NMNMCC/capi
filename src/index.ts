@@ -37,10 +37,6 @@ const checkToken = (
     return !!token && tokens.has(token);
 };
 
-const getPath = (url: string): string => {
-    return resolve("/", url.split("/").slice(4).join("/"));
-};
-
 const checkPath = (path: string, dev: boolean, allowed: string[]): boolean => {
     if (dev) return true;
     return allowed.includes(path);
@@ -76,14 +72,14 @@ export const app = new Hono()
         log("INFO", ["Authenticated", token]);
         return ctx.text(token);
     })
-    .get("/file/*", async (ctx) => {
+    .get("/file/:path{.+}", async (ctx) => {
         const token = getToken(ctx.req.raw.headers);
         if (!checkToken(token as UUID, DEV, tokens)) {
             log("ERROR", ["Invalid token", token]);
             return ctx.text("Invalid token", 403);
         }
 
-        const path = getPath(ctx.req.url);
+        const path = resolve("/", ctx.req.param("path"));
         if (!checkPath(path, DEV, ALLOWED_FILE_PATHS)) {
             log("ERROR", ["Not allowed", path]);
             return ctx.text("Not allowed", 403);
@@ -107,14 +103,14 @@ export const app = new Hono()
             }
         );
     })
-    .post("/file/*", async (ctx) => {
+    .post("/file/:path{.+}", async (ctx) => {
         const token = getToken(ctx.req.raw.headers);
         if (!checkToken(token as UUID, DEV, tokens)) {
             log("ERROR", ["Invalid token", token]);
             return ctx.text("Invalid token", 403);
         }
 
-        const path = getPath(ctx.req.url);
+        const path = resolve("/", ctx.req.param("path"));
         if (!checkPath(path, DEV, ALLOWED_FILE_PATHS)) {
             log("ERROR", ["Not allowed", path]);
             return ctx.text("Not allowed", 403);
@@ -130,7 +126,7 @@ export const app = new Hono()
             return ctx.status(500);
         }
     })
-    .get("/exec/:exec/*", async (ctx) => {
+    .get("/exec/:exec/:args{.+}", async (ctx) => {
         try {
             const token = getToken(ctx.req.raw.headers);
             if (!checkToken(token as UUID, DEV, tokens)) {
@@ -138,7 +134,7 @@ export const app = new Hono()
                 return ctx.text("Invalid token", 403);
             }
 
-            const { exec } = ctx.req.param();
+            const { exec, args } = ctx.req.param();
 
             if (!checkExec(exec, DEV, ALLOWED_EXECUTABLES)) {
                 log("ERROR", ["Not allowed executable", exec]);
@@ -147,24 +143,18 @@ export const app = new Hono()
 
             const { stdout, stderr } = ctx.req.query();
 
-            const url = ctx.req.url;
-            const execPathIndex = url.indexOf(`/exec/${exec}/`);
-            const args =
-                execPathIndex >= 0
-                    ? url
-                          .slice(execPathIndex + `/exec/${exec}/`.length)
-                          .split("/")
-                          .map(decodeURIComponent)
-                    : [];
-
             return streamText(
                 ctx,
                 (stream) =>
                     new Promise((resolve, reject) => {
                         log("INFO", ["Executing", exec, ...args]);
-                        const child = spawn(exec, args, {
-                            env: process.env,
-                        });
+                        const child = spawn(
+                            exec,
+                            args.split("/").map(decodeURIComponent),
+                            {
+                                env: process.env,
+                            }
+                        );
                         const timeout = setTimeout(
                             () => stream.abort(),
                             EXEC_TIMEOUT
