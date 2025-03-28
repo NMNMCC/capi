@@ -3,7 +3,7 @@ import { stream, streamText } from "hono/streaming";
 import { spawn } from "node:child_process";
 import { randomUUID, UUID } from "node:crypto";
 import { resolve } from "node:path";
-import * as OTPAuth from "otpauth";
+import { authenticator } from "otplib";
 import { writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { logger, LogLevel } from "@intzaaa/logger";
@@ -14,7 +14,7 @@ const ALLOWED_EXECUTABLES =
     process.env["ALLOWED_EXECUTABLES"]?.split(",") ?? [];
 const ALLOWED_FILE_PATHS = process.env["ALLOWED_FILE_PATHS"]?.split(",") ?? [];
 const EXEC_TIMEOUT = Number(process.env["EXEC_TIMEOUT"]) || 10000;
-const TOTP_SECRET = process.env["SECRET"];
+const TOTP_SECRET = process.env["TOTP_SECRET"];
 const TOKEN_EXPIRATION = Number(process.env["TOKEN_EXPIRATION"]) || 1_800_000;
 const LOGLEVEL = (process.env["LOGLEVEL"] || "INFO") as LogLevel;
 
@@ -53,17 +53,14 @@ export const app = new Hono()
     })
     .get("/auth/:code?", async (ctx) => {
         const { code } = ctx.req.param();
-        if (!TOTP_SECRET && !code) {
-            const secret = new OTPAuth.Secret().base32;
+        if (!TOTP_SECRET) {
+            const secret = authenticator.generateSecret();
             log("WARN", ["TOTP_SECRET does not exist, generated", secret]);
-            return ctx.text(secret);
+            return ctx.text(secret, 200);
         }
 
-        if (
-            !code ||
-            !new OTPAuth.TOTP({ secret: TOTP_SECRET }).validate({ token: code })
-        ) {
-            log("ERROR", ["Invalid code"]);
+        if (!code || !authenticator.check(code, TOTP_SECRET)) {
+            log("ERROR", ["Invalid code", code]);
             return ctx.text("Invalid code", 403);
         }
 
