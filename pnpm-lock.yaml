@@ -11,6 +11,12 @@ importers:
       '@hono/node-server':
         specifier: ^1.14.0
         version: 1.14.0(hono@4.7.5)
+      '@intzaaa/logger':
+        specifier: ^2.0.0
+        version: 2.0.0
+      '@intzaaa/maybe':
+        specifier: ^3.1.3
+        version: 3.1.3
       '@preact/signals-core':
         specifier: ^1.8.0
         version: 1.8.0
@@ -211,6 +217,12 @@ packages:
     engines: {node: '>=18.14.1'}
     peerDependencies:
       hono: ^4
+
+  '@intzaaa/logger@2.0.0':
+    resolution: {integrity: sha512-GR8vMz183rhcBekd1SLXlR14AdwkpsP6xd42aPvU1j9ZhVq1rcqLq4GQdYT8RgPowavseYZJryjHADI8ccNxzQ==}
+
+  '@intzaaa/maybe@3.1.3':
+    resolution: {integrity: sha512-R6Bbw8lMK6SbfXp4g96FsCv2CwbF3j0t3w52vDez1v+39OuHQD8IrWxHJBmHg1ss65GyVmZ++Nmuk9ULbLjRcA==}
 
   '@isaacs/cliui@8.0.2':
     resolution: {integrity: sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA==}
@@ -516,6 +528,9 @@ packages:
   '@tybys/wasm-util@0.9.0':
     resolution: {integrity: sha512-6+7nlbMVX/PVDCwaIQ8nTOPveOcFLSt8GcXdx8hD0bt39uWxYT88uXzqTd4fTvqta7oeUJqudepapKNt2DYJFw==}
 
+  '@typed/curry@1.0.1':
+    resolution: {integrity: sha512-ifSe9XfT+K0pycWdfIAOJda0gqHCjqMXqv+Ecb0mm6uCOI6SnDXykl7vU1lOafZbuptAmeFbdBqj+093GX5GxQ==}
+
   '@types/estree@1.0.6':
     resolution: {integrity: sha512-AYnb1nQyY49te+VRAVgmzfcgjYS91mY5P0TKUDCLEM+gNnA+3T6rWITXRLYCpahpqSQbN5cE+gHpnPyXjHWxcw==}
 
@@ -566,6 +581,10 @@ packages:
   cac@6.7.14:
     resolution: {integrity: sha512-b6Ilus+c3RrdDk+JhLKUAQfzzgLEPy6wcXqS7f/xe1EETvsDP6GORG7SFuOs6cID5YkqchW/LXZbX5bc8j7ZcQ==}
     engines: {node: '>=8'}
+
+  chalk@5.4.1:
+    resolution: {integrity: sha512-zgVZuo2WcZgfUEmsn6eO3kINexW8RAE4maiQ8QNs8CtpPCSyMiYsULR3HQYkm3w8FIA3SberyMJMSldGsW+U3w==}
+    engines: {node: ^12.17.0 || ^14.13 || >=16.0.0}
 
   chokidar@4.0.3:
     resolution: {integrity: sha512-Qgzu8kfBvo+cA4962jnP1KkS6Dop5NS6g7R5LFYJr4b8Ub94PPQXUksCw9PvXoeXPRRddRNC5C1JQUR2SMGtnA==}
@@ -979,6 +998,13 @@ snapshots:
     dependencies:
       hono: 4.7.5
 
+  '@intzaaa/logger@2.0.0':
+    dependencies:
+      '@typed/curry': 1.0.1
+      chalk: 5.4.1
+
+  '@intzaaa/maybe@3.1.3': {}
+
   '@isaacs/cliui@8.0.2':
     dependencies:
       string-width: 5.1.2
@@ -1196,6 +1222,8 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
+  '@typed/curry@1.0.1': {}
+
   '@types/estree@1.0.6': {}
 
   '@types/node@22.13.14':
@@ -1232,6 +1260,8 @@ snapshots:
       load-tsconfig: 0.2.5
 
   cac@6.7.14: {}
+
+  chalk@5.4.1: {}
 
   chokidar@4.0.3:
     dependencies:

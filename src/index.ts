@@ -6,7 +6,9 @@ import { resolve } from "node:path";
 import * as OTPAuth from "otpauth";
 import { writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
+import { logger, LogLevel } from "@intzaaa/logger";
 
+const NAME = process.env["NAME"] || "CAPI";
 const DEV = process.env["NODE_ENV"] === "development";
 const ALLOWED_EXECUTABLES =
     process.env["ALLOWED_EXECUTABLES"]?.split(",") ?? [];
@@ -14,21 +16,46 @@ const ALLOWED_FILE_PATHS = process.env["ALLOWED_FILE_PATHS"]?.split(",") ?? [];
 const EXEC_TIMEOUT = Number(process.env["EXEC_TIMEOUT"]) || 10000;
 const TOTP_SECRET = process.env["SECRET"];
 const TOKEN_EXPIRATION = Number(process.env["TOKEN_EXPIRATION"]) || 1_800_000;
+const LOGLEVEL = (process.env["LOGLEVEL"] || "INFO") as LogLevel;
+
+const log = logger(LOGLEVEL, NAME);
 
 const tokens: Set<UUID> = new Set();
 
-const isValidToken = (token?: UUID): boolean => {
-    if (DEV) return true;
-    if (!token) return false;
-    return tokens.has(token);
+// 修改简化工具函数
+const checkToken = (
+    token: UUID | undefined,
+    dev: boolean,
+    tokens: Set<UUID>
+): boolean => {
+    if (dev) return true;
+    return !!token && tokens.has(token);
+};
+
+const getPath = (url: string): string => {
+    return resolve("/", url.split("/").slice(4).join("/"));
+};
+
+const checkPath = (path: string, dev: boolean, allowed: string[]): boolean => {
+    if (dev) return true;
+    return allowed.includes(path);
+};
+
+const checkExec = (exec: string, dev: boolean, allowed: string[]): boolean => {
+    if (dev) return true;
+    return allowed.includes(exec);
 };
 
 export const app = new Hono()
-    .get("/health", async (ctx) => ctx.text("OK", 200))
+    .get("/health", async (ctx) => {
+        log("INFO", ["Health Checked"]);
+        return ctx.text("OK", 200);
+    })
     .get("/auth/:code?", async (ctx) => {
         const { code } = ctx.req.param();
         if (!TOTP_SECRET && !code) {
             const secret = new OTPAuth.Secret().base32;
+            log("WARN", ["TOTP_SECRET does not exist, generated", secret]);
             return ctx.text(secret);
         }
 
@@ -36,27 +63,38 @@ export const app = new Hono()
             !code ||
             !new OTPAuth.TOTP({ secret: TOTP_SECRET }).validate({ token: code })
         ) {
+            log("ERROR", ["Invalid code"]);
             return ctx.text("Invalid code", 403);
         }
 
         const token = randomUUID();
         tokens.add(token);
         setTimeout(() => tokens.delete(token), TOKEN_EXPIRATION);
+
+        log("INFO", ["Authenticated", token]);
         return ctx.text(token);
     })
     .get("/file/*", async (ctx) => {
         const { token } = ctx.req.query();
-        if (!isValidToken(token as UUID)) return ctx.text("Invalid token", 403);
+        if (!checkToken(token as UUID, DEV, tokens)) {
+            log("ERROR", ["Invalid token", token]);
+            return ctx.text("Invalid token", 403);
+        }
 
-        const path = resolve("/", ctx.req.url.split("/").slice(4).join("/"));
-
-        if (!DEV && !ALLOWED_FILE_PATHS.includes(path))
+        const path = getPath(ctx.req.url);
+        if (!checkPath(path, DEV, ALLOWED_FILE_PATHS)) {
+            log("ERROR", ["Not allowed", path]);
             return ctx.text("Not allowed", 403);
+        }
+
         return stream(
             ctx,
             (stream) =>
                 new Promise((resolve, reject) => {
+                    log("INFO", ["Reading file", path]);
+
                     const file = createReadStream(path);
+
                     file.on("data", stream.write.bind(stream));
                     file.on("close", resolve);
                     file.on("error", reject);
@@ -69,40 +107,54 @@ export const app = new Hono()
     })
     .post("/file/*", async (ctx) => {
         const { token } = ctx.req.query();
-        if (!DEV && !isValidToken(token as UUID))
+        if (!checkToken(token as UUID, DEV, tokens)) {
+            log("ERROR", ["Invalid token", token]);
             return ctx.text("Invalid token", 403);
+        }
 
-        const path = resolve("/", ctx.req.url.split("/").slice(4).join("/"));
-
-        if (!DEV && !ALLOWED_FILE_PATHS.includes(path))
+        const path = getPath(ctx.req.url);
+        if (!checkPath(path, DEV, ALLOWED_FILE_PATHS)) {
+            log("ERROR", ["Not allowed", path]);
             return ctx.text("Not allowed", 403);
+        }
 
         const content = await ctx.req.text();
         try {
+            log("INFO", ["Writing file", path]);
             await writeFile(path, content, "utf8");
             return ctx.status(200);
         } catch (err) {
+            log("ERROR", ["Write file error", err]);
             return ctx.status(500);
         }
     })
     .get("/exec/:exec/*", async (ctx) => {
         try {
             const { exec } = ctx.req.param();
-            if (!DEV && !ALLOWED_EXECUTABLES.includes(exec))
+
+            if (!checkExec(exec, DEV, ALLOWED_EXECUTABLES)) {
+                log("ERROR", ["Not allowed executable", exec]);
                 return ctx.text("Not allowed", 403);
+            }
+
+            const { stdout, stderr } = ctx.req.query();
 
             const args = ctx.req.url
                 .split("/")
                 .slice(4)
                 .map((arg) => decodeURIComponent(arg));
-            const { stdout, stderr, token } = ctx.req.query();
-            if (!DEV && !isValidToken(token as UUID))
+
+            const { token } = ctx.req.query();
+            if (!checkToken(token as UUID, DEV, tokens)) {
+                log("ERROR", ["Invalid token", token]);
                 return ctx.text("Invalid token", 403);
+            }
 
             return streamText(
                 ctx,
                 (stream) =>
                     new Promise((resolve, reject) => {
+                        log("INFO", ["Executing", exec, ...args]);
                         const child = spawn(exec, args, {
                             env: process.env,
                         });
@@ -129,9 +181,9 @@ export const app = new Hono()
                             });
                         };
 
-                        (stdout !== undefined || stdout === stderr) &&
+                        (!stdout || stdout === stderr) &&
                             child.stdout.on("data", handler);
-                        (stderr !== undefined || stdout === stderr) &&
+                        (!stderr || stderr === stdout) &&
                             child.stderr.on("data", handler);
                     }),
                 async (err, stream) => {
@@ -140,6 +192,7 @@ export const app = new Hono()
                 }
             );
         } catch (e) {
+            log("ERROR", ["Execution error", (e as any).message]);
             return ctx.text((e as any).message, 500);
         }
     });
