@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { app } from ".";
 import { serve } from "@hono/node-server";
 
