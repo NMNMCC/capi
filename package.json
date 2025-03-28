@@ -1,0 +1,30 @@
+{
+    "name": "@intzaaa/capi",
+    "version": "0.0.2",
+    "bin": {
+        "capi": "./dist/index.js"
+    },
+    "scripts": {
+        "dev": "node --import @swc-node/register/esm-register ./src/index.ts",
+        "build": "ncc build ./src/index.ts -m -s -o ./dist",
+        "build-publish": "pnpm i && pnpm build && pnpm publish --access=public --registry https://registry.npmjs.com"
+    },
+    "files": [
+        "dist"
+    ],
+    "license": "AGPL-3.0-only",
+    "packageManager": "pnpm@10.7.0",
+    "type": "module",
+    "dependencies": {},
+    "devDependencies": {
+        "@hono/node-server": "^1.14.0",
+        "@preact/signals-core": "^1.8.0",
+        "@vercel/ncc": "^0.38.3",
+        "hono": "^4.7.5",
+        "otplib": "^12.0.1",
+        "qrcode-terminal": "^0.12.0",
+        "@swc-node/register": "^1.10.10",
+        "@types/node": "^22.13.14",
+        "@types/qrcode-terminal": "^0.12.2"
+    }
+}
