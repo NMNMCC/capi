@@ -1,9 +1,9 @@
 {
     "name": "@intzaaa/capi",
-    "version": "0.0.6",
+    "version": "0.0.7",
     "exports": {
         "default": {
-            "default": "./src/server-type.ts"
+            "default": "./src/type.ts"
         }
     },
     "bin": {
