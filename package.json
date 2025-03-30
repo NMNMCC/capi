@@ -1,12 +1,12 @@
 {
     "name": "@intzaaa/capi",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "exports": {
-        "default": {
-            "default": "./src/type.ts"
-        },
         "app": {
             "default": "./src/index.ts"
+        },
+        "default": {
+            "default": "./src/type.ts"
         }
     },
     "bin": {

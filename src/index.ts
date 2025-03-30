@@ -7,18 +7,31 @@ import { authenticator } from "otplib";
 import { writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { logger, LogLevel } from "@intzaaa/logger";
+import { MiddlewareHandler } from "hono";
 
-const NAME = process.env["NAME"] || "CAPI";
-const DEV = process.env["NODE_ENV"] === "development";
-const ALLOWED_EXECUTABLES =
-    process.env["ALLOWED_EXECUTABLES"]?.split(",") ?? [];
-const ALLOWED_FILE_PATHS = process.env["ALLOWED_FILE_PATHS"]?.split(",") ?? [];
-const EXEC_TIMEOUT = Number(process.env["EXEC_TIMEOUT"]) || 10000;
-const TOTP_SECRET = process.env["TOTP_SECRET"];
-const TOKEN_EXPIRATION = Number(process.env["TOKEN_EXPIRATION"]) || 1_800_000;
-const LOGLEVEL = (process.env["LOGLEVEL"] || "INFO") as LogLevel;
+type Config = {
+    NAME: string;
+    DEV: boolean;
+    ALLOWED_EXECUTABLES: string[];
+    ALLOWED_FILE_PATHS: string[];
+    EXEC_TIMEOUT: number;
+    TOTP_SECRET: string | undefined;
+    TOKEN_EXPIRATION: number;
+    LOGLEVEL: LogLevel;
+};
 
-const log = logger(LOGLEVEL, NAME);
+const config: Config = {
+    NAME: process.env["NAME"] || "CAPI",
+    DEV: process.env["NODE_ENV"] === "development",
+    ALLOWED_EXECUTABLES: process.env["ALLOWED_EXECUTABLES"]?.split(",") ?? [],
+    ALLOWED_FILE_PATHS: process.env["ALLOWED_FILE_PATHS"]?.split(",") ?? [],
+    EXEC_TIMEOUT: Number(process.env["EXEC_TIMEOUT"]) || 10000,
+    TOTP_SECRET: process.env["TOTP_SECRET"],
+    TOKEN_EXPIRATION: Number(process.env["TOKEN_EXPIRATION"]) || 1_800_000,
+    LOGLEVEL: (process.env["LOGLEVEL"] || "INFO") as LogLevel,
+};
+
+const log = logger(config.LOGLEVEL, config.NAME);
 
 const tokens: Set<UUID> = new Set();
 
@@ -27,7 +40,6 @@ const getToken = (headers: Headers): UUID | undefined => {
     return authHeader ? (authHeader as UUID) : undefined;
 };
 
-// 修改简化工具函数
 const checkToken = (
     token: UUID | undefined,
     dev: boolean,
@@ -47,6 +59,15 @@ const checkExec = (exec: string, dev: boolean, allowed: string[]): boolean => {
     return allowed.includes(exec);
 };
 
+const auth: MiddlewareHandler = async (ctx, next) => {
+    const token = getToken(ctx.req.raw.headers);
+    if (!checkToken(token as UUID, config.DEV, tokens)) {
+        log("ERROR", ["Invalid token", token]);
+        return ctx.text("Invalid token", 403);
+    }
+    return await next();
+};
+
 export const app = new Hono()
     .get("/health", async (ctx) => {
         log("INFO", ["Health Checked"]);
@@ -54,33 +75,30 @@ export const app = new Hono()
     })
     .get("/auth/:code?", async (ctx) => {
         const { code } = ctx.req.param();
-        if (!TOTP_SECRET) {
+        if (!config.TOTP_SECRET) {
             const secret = authenticator.generateSecret();
             log("WARN", ["TOTP_SECRET does not exist, generated", secret]);
             return ctx.text(secret, 200);
         }
 
-        if (!code || !authenticator.check(code, TOTP_SECRET)) {
+        if (!code || !authenticator.check(code, config.TOTP_SECRET)) {
             log("ERROR", ["Invalid code", code]);
             return ctx.text("Invalid code", 403);
         }
 
         const token = randomUUID();
         tokens.add(token);
-        setTimeout(() => tokens.delete(token), TOKEN_EXPIRATION);
+        setTimeout(() => tokens.delete(token), config.TOKEN_EXPIRATION);
 
         log("INFO", ["Authenticated", token]);
-        return ctx.text(token);
+        return ctx.json({
+            token,
+            expiration: config.TOKEN_EXPIRATION,
+        });
     })
-    .get("/file/:path{.+}", async (ctx) => {
-        const token = getToken(ctx.req.raw.headers);
-        if (!checkToken(token as UUID, DEV, tokens)) {
-            log("ERROR", ["Invalid token", token]);
-            return ctx.text("Invalid token", 403);
-        }
-
+    .get("/file/:path{.+}", auth, async (ctx) => {
         const path = resolve("/", ctx.req.param("path"));
-        if (!checkPath(path, DEV, ALLOWED_FILE_PATHS)) {
+        if (!checkPath(path, config.DEV, config.ALLOWED_FILE_PATHS)) {
             log("ERROR", ["Not allowed", path]);
             return ctx.text("Not allowed", 403);
         }
@@ -103,15 +121,9 @@ export const app = new Hono()
             }
         );
     })
-    .post("/file/:path{.+}", async (ctx) => {
-        const token = getToken(ctx.req.raw.headers);
-        if (!checkToken(token as UUID, DEV, tokens)) {
-            log("ERROR", ["Invalid token", token]);
-            return ctx.text("Invalid token", 403);
-        }
-
+    .post("/file/:path{.+}", auth, async (ctx) => {
         const path = resolve("/", ctx.req.param("path"));
-        if (!checkPath(path, DEV, ALLOWED_FILE_PATHS)) {
+        if (!checkPath(path, config.DEV, config.ALLOWED_FILE_PATHS)) {
             log("ERROR", ["Not allowed", path]);
             return ctx.text("Not allowed", 403);
         }
@@ -126,17 +138,11 @@ export const app = new Hono()
             return ctx.status(500);
         }
     })
-    .get("/exec/:exec/:args{.+}", async (ctx) => {
+    .get("/exec/:exec/:args{.+}", auth, async (ctx) => {
         try {
-            const token = getToken(ctx.req.raw.headers);
-            if (!checkToken(token as UUID, DEV, tokens)) {
-                log("ERROR", ["Invalid token", token]);
-                return ctx.text("Invalid token", 403);
-            }
-
             const { exec, args } = ctx.req.param();
 
-            if (!checkExec(exec, DEV, ALLOWED_EXECUTABLES)) {
+            if (!checkExec(exec, config.DEV, config.ALLOWED_EXECUTABLES)) {
                 log("ERROR", ["Not allowed executable", exec]);
                 return ctx.text("Not allowed", 403);
             }
@@ -157,7 +163,7 @@ export const app = new Hono()
                         );
                         const timeout = setTimeout(
                             () => stream.abort(),
-                            EXEC_TIMEOUT
+                            config.EXEC_TIMEOUT
                         );
 
                         child.on("close", () => {
