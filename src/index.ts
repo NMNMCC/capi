@@ -28,10 +28,15 @@ const config: Config = {
     RATE_LIMIT: Number(process.env["RATE_LIMIT"]) || 1000,
     MAX_PENDING_REQUESTS: Number(process.env["MAX_PENDING_REQUESTS"]) || 10,
     USERS:
-        (process.env["USERS"]?.split(",").map((user) => user.split(":")) as [
-            string,
-            string
-        ][]) ?? [],
+        (
+            process.env["USERS"]?.split(",").map((user) => user.split(":")) as [
+                string,
+                string
+            ][]
+        ).map(([username, password]) => [
+            decodeURIComponent(username.trim()),
+            decodeURIComponent(password.trim()),
+        ]) ?? [],
     LOGLEVEL: (process.env["LOGLEVEL"] || "INFO") as LogLevel,
 };
 
