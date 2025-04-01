@@ -1,9 +1,7 @@
 import { Hono } from "hono";
 import { stream, streamText } from "hono/streaming";
 import { spawn } from "node:child_process";
-import { randomUUID, UUID } from "node:crypto";
 import { resolve } from "node:path";
-import { authenticator } from "otplib";
 import { writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { logger, LogLevel } from "@intzaaa/logger";
@@ -14,9 +12,10 @@ type Config = {
     DEV: boolean;
     ALLOWED_EXECUTABLES: string[];
     ALLOWED_FILE_PATHS: string[];
+    MAX_PENDING_REQUESTS: number;
+    RATE_LIMIT: number;
     EXEC_TIMEOUT: number;
-    TOTP_SECRET: string | undefined;
-    TOKEN_EXPIRATION: number;
+    USERS: [string, string][];
     LOGLEVEL: LogLevel;
 };
 
@@ -26,28 +25,17 @@ const config: Config = {
     ALLOWED_EXECUTABLES: process.env["ALLOWED_EXECUTABLES"]?.split(",") ?? [],
     ALLOWED_FILE_PATHS: process.env["ALLOWED_FILE_PATHS"]?.split(",") ?? [],
     EXEC_TIMEOUT: Number(process.env["EXEC_TIMEOUT"]) || 10000,
-    TOTP_SECRET: process.env["TOTP_SECRET"],
-    TOKEN_EXPIRATION: Number(process.env["TOKEN_EXPIRATION"]) || 1_800_000,
+    RATE_LIMIT: Number(process.env["RATE_LIMIT"]) || 1000,
+    MAX_PENDING_REQUESTS: Number(process.env["MAX_PENDING_REQUESTS"]) || 10,
+    USERS:
+        (process.env["USERS"]?.split(",").map((user) => user.split(":")) as [
+            string,
+            string
+        ][]) ?? [],
     LOGLEVEL: (process.env["LOGLEVEL"] || "INFO") as LogLevel,
 };
 
 const log = logger(config.LOGLEVEL, config.NAME);
-
-const tokens: Set<UUID> = new Set();
-
-const getToken = (headers: Headers): UUID | undefined => {
-    const authHeader = headers.get("Authorization");
-    return authHeader ? (authHeader as UUID) : undefined;
-};
-
-const checkToken = (
-    token: UUID | undefined,
-    dev: boolean,
-    tokens: Set<UUID>
-): boolean => {
-    if (dev) return true;
-    return !!token && tokens.has(token);
-};
 
 const checkPath = (path: string, dev: boolean, allowed: string[]): boolean => {
     if (dev) return true;
@@ -60,43 +48,44 @@ const checkExec = (exec: string, dev: boolean, allowed: string[]): boolean => {
 };
 
 const auth: MiddlewareHandler = async (ctx, next) => {
-    const token = getToken(ctx.req.raw.headers);
-    if (!checkToken(token as UUID, config.DEV, tokens)) {
-        log("ERROR", ["Invalid token", token]);
-        return ctx.text("Invalid token", 403);
+    const [username, password] =
+        ctx.req.header("Authorization")?.split(":").map(decodeURIComponent) ??
+        [];
+
+    if (
+        !username ||
+        !password ||
+        !config.USERS.some(([u, p]) => u === username && p === password)
+    ) {
+        log("ERROR", ["Invalid credentials", username, password]);
+        return ctx.text("Invalid credentials", 403);
     }
+
     return await next();
 };
 
+let pending = 0;
+let last = 0;
+const throttle: MiddlewareHandler = (ctx, next) =>
+    new Promise(async (resolve) => {
+        if (pending >= config.MAX_PENDING_REQUESTS) {
+            return ctx.status(429);
+        }
+
+        pending++;
+        setTimeout(async () => {
+            last = Date.now();
+            resolve(await next());
+            pending--;
+        }, config.RATE_LIMIT - (Date.now() - last));
+    });
+
 export const app = new Hono()
-    .get("/health", async (ctx) => {
+    .get("/health", throttle, async (ctx) => {
         log("INFO", ["Health Checked"]);
         return ctx.text("OK", 200);
     })
-    .get("/auth/:code?", async (ctx) => {
-        const { code } = ctx.req.param();
-        if (!config.TOTP_SECRET) {
-            const secret = authenticator.generateSecret();
-            log("WARN", ["TOTP_SECRET does not exist, generated", secret]);
-            return ctx.text(secret, 200);
-        }
-
-        if (!code || !authenticator.check(code, config.TOTP_SECRET)) {
-            log("ERROR", ["Invalid code", code]);
-            return ctx.text("Invalid code", 403);
-        }
-
-        const token = randomUUID();
-        tokens.add(token);
-        setTimeout(() => tokens.delete(token), config.TOKEN_EXPIRATION);
-
-        log("INFO", ["Authenticated", token]);
-        return ctx.json({
-            token,
-            expiration: config.TOKEN_EXPIRATION,
-        });
-    })
-    .get("/file/:path{.+}", auth, async (ctx) => {
+    .get("/file/:path{.+}", auth, throttle, async (ctx) => {
         const path = resolve("/", ctx.req.param("path"));
         if (!checkPath(path, config.DEV, config.ALLOWED_FILE_PATHS)) {
             log("ERROR", ["Not allowed", path]);
@@ -121,7 +110,7 @@ export const app = new Hono()
             }
         );
     })
-    .post("/file/:path{.+}", auth, async (ctx) => {
+    .post("/file/:path{.+}", auth, throttle, async (ctx) => {
         const path = resolve("/", ctx.req.param("path"));
         if (!checkPath(path, config.DEV, config.ALLOWED_FILE_PATHS)) {
             log("ERROR", ["Not allowed", path]);
@@ -138,7 +127,7 @@ export const app = new Hono()
             return ctx.status(500);
         }
     })
-    .get("/exec/:exec/:args{.+}", auth, async (ctx) => {
+    .get("/exec/:exec/:args{.+}", auth, throttle, async (ctx) => {
         try {
             const { exec, args } = ctx.req.param();
 
